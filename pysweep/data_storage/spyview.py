@@ -255,7 +255,7 @@ class SpyviewStorage(BaseStorage):
 
         json_file = SpyviewStorage.snapshot_file_path(self._output_file_path)
         with open(json_file, 'w') as meta_file:
-            json.dump(snapshot, meta_file, sort_keys=True, indent=4, ensure_ascii=False)
+            json.dump(snapshot, meta_file, sort_keys=False, indent=4, ensure_ascii=False)
 
 
 
