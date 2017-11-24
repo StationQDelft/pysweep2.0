@@ -85,28 +85,17 @@ class SpyviewWriter:
         self._independent_parameters = []
         self._meta_writer = meta_writer
 
-    def _get_buffer_size(self):
-        if self._buffer == dict():
-            return 0
+    def _get_buffer_sizes(self):
+        return set([len(self._get_buffer_value(key)) for key in self._buffer.keys()])
 
-        size = np.inf
-        for key in self._buffer.keys():
-            value = self._get_buffer_value(key)
-            if hasattr(value, "__len__"):
-                this_size = len(value)
-            else:
-                this_size = 1
-
-            size = min([size, this_size])
-        return size
+    @staticmethod
+    def collapse_axis(lst):
+        ary = np.array(lst)
+        return np.sum(ary != np.roll(ary, -1))
 
     def _find_independent_parameters(self):
 
-        def collapse(lst):
-            ary = np.array(lst)
-            return np.sum(ary != np.roll(ary, -1))
-
-        independent_collapsed = [[k, collapse(self._buffer[k]["value"])] for k in self._buffer
+        independent_collapsed = [[k, SpyviewWriter.collapse_axis(self._buffer[k]["value"])] for k in self._buffer
                                   if "independent_parameter" in self._buffer[k]]
 
         if len(independent_collapsed) == 0:
@@ -161,14 +150,52 @@ class SpyviewWriter:
         self._writer_function(out)
         self._meta_writer.add(self._buffer, all_parameters)
 
+    def _reshape_dictionary(self, dictionary):
+
+        dictionary = self._merger.merge([
+            dictionary,
+            {param: {"value": []} for param in self._delayed_parameters},
+            {k: {"value": []} for k in dictionary.keys()}
+        ])
+
+        parameter_values_sizes = set([len(dictionary[param]["value"]) for param in dictionary.keys() if param not in
+                                      self._delayed_parameters])
+
+        if len(parameter_values_sizes) == 0:
+            return dictionary
+
+        min_size = min(parameter_values_sizes)
+        max_size = max(parameter_values_sizes)
+
+        if len(parameter_values_sizes) > 2 or (min_size != 1 and max_size > 1):
+            raise ValueError("The Spyview storage module requires all data blocks to be of equal size. If one "
+                             "data block is larger then one but the others are exactly one, then the latter blocks "
+                             "are repeated to match the length of of the largest block")
+
+        inner_axis_included = False
+        if max_size > 1:
+            for parameter_properties in dictionary.values():
+                if len(parameter_properties["value"]) == 1:
+                    # Note that "value" is a list, which means we are repeating instead of multiplying element wise
+                    parameter_properties["value"] *= max_size
+                else:
+                    collapsed_len = SpyviewWriter.collapse_axis(parameter_properties["value"])
+                    is_independent = "independent_parameter" in parameter_properties
+
+                    if len(parameter_properties["value"]) == collapsed_len and is_independent:
+                        inner_axis_included = True
+
+        if not inner_axis_included:
+            dictionary["index"] = {"unit": "#", "value": list(range(max_size)), "independent_parameter": True}
+
+        return dictionary
+
     def add(self, dictionary):
-        delayed_params_buffer = {param: {"value": []} for param in self._delayed_parameters}
 
-        if self._buffer == {}:
-            self._buffer = {k: {"value": []} for k in dictionary.keys()}  # Make sure all values are lists
+        dictionary = self._reshape_dictionary(dictionary)
+        self._buffer = self._merger.merge([dictionary, self._buffer])
 
-        self._buffer = self._merger.merge([dictionary, delayed_params_buffer, self._buffer])
-        buffer_size = self._get_buffer_size()
+        buffer_size = min(self._get_buffer_sizes())
         if buffer_size and buffer_size % self._max_buffer_size == 0:
             self._write_buffer()
 

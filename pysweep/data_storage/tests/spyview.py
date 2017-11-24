@@ -210,3 +210,51 @@ def test_delayed(n, m, max_buffer_size):
 
     assert meta_debug_lines == compare
 
+
+@given(integers(min_value=5, max_value=10), integers(min_value=10, max_value=70), integers(min_value=1, max_value=500))
+@settings(max_examples=3)
+def test_blocks(n, m, max_buffer_size):
+
+    output_file = tempfile.TemporaryFile()
+    meta_output_file = tempfile.TemporaryFile(mode="rb+")
+
+    def output_write_function(output):
+        output_file.seek(0)
+        output_file.write(output.encode())
+
+    def meta_write_function(output):
+        meta_output_file.seek(0)
+        meta_output_file.write(output.encode())
+
+    meta_writer = SpyviewMetaWriter(meta_write_function)
+    writer = SpyviewWriter(output_write_function, meta_writer, max_buffer_size=max_buffer_size)
+
+    x = list(range(m))
+    z = [list(range(i, i + n)) for i in x]
+
+    x_dicts = [{"x": {"unit": "u", "value": v, "independent_parameter": True}} for v in x]
+    z_dicts = [{"z": {"unit": "w", "value": v}} for v in z]
+
+    for dict_list in zip(x_dicts, z_dicts):
+
+        merge = {}
+        for d in dict_list:
+            merge.update(d)
+
+        writer.add(merge)
+
+    writer.finalize()
+
+    lines = read_lines(output_file)
+    lines_g = (l for l in lines)
+
+    for outer_count, z_block in enumerate(z):
+        ix = x[outer_count]
+
+        if outer_count > 0:
+            assert next(lines_g) == ""
+
+        for inner_count, iz in enumerate(z_block):
+            test_line = "\t".join(map(str, [inner_count, ix, iz]))
+            ln = next(lines_g)
+            assert ln == test_line
