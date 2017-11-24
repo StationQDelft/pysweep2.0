@@ -1,6 +1,6 @@
 from qcodes import Station
 
-from .testing_utilities import equivalence_test
+from .testing_utilities import equivalence_test, run_test_function
 
 from pysweep.measurement import Measurement
 from pysweep import sweep
@@ -156,3 +156,4 @@ def test_simple_nested():
 
     equivalence_test(test1, compare)
     equivalence_test(test2, compare)
+

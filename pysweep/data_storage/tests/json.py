@@ -46,3 +46,24 @@ def test2():
     with pytest.raises(ValueError):
         storage.output("C")
 
+
+def test_list_values():
+    """
+    We have seen in the past a bug whereby if the measurement function returns an arrayed value and we call the output
+    method of the JSON storage class twice, then the internal buffer of the storage gets corrupted. Test that this
+    bug solved.
+    """
+
+    m, n = 4, 5
+    values = [list(range(i, i + m)) for i in range(n)]
+    dicts = [{"A": {"unit": "u", "value": v}} for v in values]
+
+    storage = JSONStorage(unit="replace", value="append", independent_parameter="replace")
+    for d in dicts:
+        storage.add(d)
+
+    o = storage.output("A")
+    assert len(o["A"]["value"]) == m * n
+
+    o = storage.output("A")
+    assert len(o["A"]["value"]) == m * n

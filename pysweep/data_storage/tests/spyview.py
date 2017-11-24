@@ -84,8 +84,7 @@ def test_1d(m, max_buffer_size):
         assert next(lines) == "\t".join(map(str, [ix, 0, ix ** 2 + 3]))
 
     meta_debug_lines = read_lines(meta_output_file)
-    compare = [str(i) for i in [m, min(x), max(x), "x [u]", 1, 0, 0, "empty []", 1, 0, 1, "none"]]
-    compare.extend(["3", "y [v]"])
+    compare = [str(i) for i in [m, min(x), max(x), "x [u]", 1, 0, 0, "empty []", 1, 0, 1, "none", 3, "y [v]"]]
 
     assert meta_debug_lines == compare
 
@@ -144,13 +143,12 @@ def test(n, m, max_buffer_size):
             assert next(lines) == test_line
 
     meta_debug_lines = read_lines(meta_output_file)
-    compare = [str(i) for i in [n, min(x), max(x), "x [u]", m, max(y), min(y), "y [v]", 1, 0, 1, "none"]]
-    compare.extend(["3", "z [w]"])
+    compare = [str(i) for i in [n, min(x), max(x), "x [u]", m, max(y), min(y), "y [v]", 1, 0, 1, "none", 3, "z [w]"]]
 
     assert meta_debug_lines == compare
 
 
-@given(integers(min_value=3, max_value=7), integers(min_value=3, max_value=7), integers(min_value=5, max_value=500))
+@given(integers(min_value=3, max_value=7), integers(min_value=3, max_value=7), integers(min_value=1, max_value=500))
 @settings(max_examples=30)
 def test_delayed(n, m, max_buffer_size):
 
@@ -208,8 +206,7 @@ def test_delayed(n, m, max_buffer_size):
             assert next(lines) == test_line
 
     meta_debug_lines = read_lines(meta_output_file)
-    compare = [str(i) for i in [n, min(x), max(x), "x [u]", m, max(y), min(y), "y [v]", 1, 0, 1, "none"]]
-    compare.extend(["3", "z [w]"])
+    compare = [str(i) for i in [n, min(x), max(x), "x [u]", m, max(y), min(y), "y [v]", 1, 0, 1, "none", 3, "z [w]"]]
 
     assert meta_debug_lines == compare
 

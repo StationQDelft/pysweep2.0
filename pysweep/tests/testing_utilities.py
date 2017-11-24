@@ -128,6 +128,16 @@ def sorted_dict(dcts):
     return d
 
 
+def run_test_function(test_function):
+    stdio_mock = StdIOMock()
+    args = (ParameterFactory(stdio_mock), SweepValuesFactory(), stdio_mock, MeasurementFunctionFactory(stdio_mock),
+            pysweep.Namespace())
+
+    stdio_mock.flush()
+    MeasureFunction.reset_serial_number()
+    test_function(*args)
+
+
 def equivalence_test(test_function, compare_function):
 
     stdio_mock = StdIOMock()
@@ -141,3 +151,4 @@ def equivalence_test(test_function, compare_function):
     compare_out = compare_function(*args)
 
     assert test_out == compare_out
+

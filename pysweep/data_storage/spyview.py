@@ -165,7 +165,7 @@ class SpyviewWriter:
         delayed_params_buffer = {param: {"value": []} for param in self._delayed_parameters}
 
         if self._buffer == {}:
-            self._buffer = {k: {"value": []} for k in dictionary.keys()}
+            self._buffer = {k: {"value": []} for k in dictionary.keys()}  # Make sure all values are lists
 
         self._buffer = self._merger.merge([dictionary, delayed_params_buffer, self._buffer])
         buffer_size = self._get_buffer_size()
@@ -180,13 +180,34 @@ class SpyviewWriter:
 
 
 class SpyviewStorage(BaseStorage):
+    """
+    The spyview storage module
+    """
+    # The storage folder can be set by the user using the "set_storage_folder" interface.
+    storage_folder = ""
 
+    # If the user does not set the storage folder, use the default one
     @staticmethod
-    def default_file_path():
-        io = qcodes.DiskIO('.')
+    def default_storage_folder():
         home_path = os.path.expanduser("~")
-        data_path = os.path.join(home_path, "data", "{date}", "{date}_{counter}.dat")
+        storage_folder = os.path.join(home_path, "data")
+        return storage_folder
+
+    @classmethod
+    def set_storage_folder(cls, folder: str) ->None:
+        cls.storage_folder = folder
+
+    @classmethod
+    def default_file_path(cls) ->str:
+        """
+        The default data output path.
+        """
+        if cls.storage_folder is "":
+            cls.storage_folder = cls.default_storage_folder()
+
+        data_path = os.path.join(cls.storage_folder, "{date}", "{date}_{counter}.dat")
         loc_provider = qcodes.data.location.FormatLocation(fmt=data_path)
+        io = qcodes.DiskIO('.')
         file_path = loc_provider(io)
 
         dir_name, _ = os.path.split(file_path)
@@ -196,7 +217,7 @@ class SpyviewStorage(BaseStorage):
         return file_path
 
     @staticmethod
-    def meta_file_path(output_file_path):
+    def meta_file_path(output_file_path: str):
         dirname, filename = os.path.split(output_file_path)
         meta_file_name = filename.replace(".dat", ".meta.txt")
         return os.path.join(dirname, meta_file_name)
@@ -207,7 +228,8 @@ class SpyviewStorage(BaseStorage):
         json_file_name = filename.replace(".dat", ".station_snapshot.json")
         return os.path.join(dirname, json_file_name)
 
-    def __init__(self, output_file_path=None, delayed_parameters=None, max_buffer_size=10, debug=False):
+    def __init__(self, output_file_path=None, delayed_parameters=None, max_buffer_size=10,
+                 debug=False):
 
         self._output_file_path = output_file_path or SpyviewStorage.default_file_path()
         self._output_meta_file_path = SpyviewStorage.meta_file_path(self._output_file_path)

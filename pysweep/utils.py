@@ -24,8 +24,8 @@ class DictMerge:
     @staticmethod
     def _make_list(v):
         if isinstance(v, list):
-            return v
-        return [v]
+            return list(v)  # Return a copy!
+        return list([v])
 
     def _merge_two(self, d1, d2):
         result = dict(d1)
