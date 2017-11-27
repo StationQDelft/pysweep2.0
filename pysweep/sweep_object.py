@@ -1,10 +1,11 @@
 """
-A sweep object allows us to quickly express a measurement where we loop over independent experimental parameters and
-perform measurements at different phases in the loop: either after the start of a loop, after at the end of it, or after
-each of the set points in the sweep.
+Sweep object definitions
 """
-import time
+import collections
 from collections import OrderedDict
+import copy
+import itertools
+import time
 
 import qcodes
 import qcodes.instrument.parameter
@@ -16,19 +17,7 @@ class BaseSweepObject:
     1) It is iterable and looping over a sweep object shall result in independent measurement parameters being set
     at each iteration
     2) At each iteration a dictionary is returned containing information about the parameters set and measurements that
-    have been performed. Note that in general, the number of iterations is equal to the number of set points, except
-    for the case where the "after_end" measurement function returns a non-empty dictionary. In the latter case, the
-    number of iterations is equal to the number of set points, plus one. The last iteration returns the result of the
-    after_end measurement.
-    3) A sweep object implements the following methods at minimum:
-
-       * after_each
-       * after_start
-       * after_end
-       * set_station
-       * set_namespace
-
-       The meaning and signatures of these methods are explained in their respective doc strings.
+    have been performed.
     """
 
     @staticmethod
@@ -283,6 +272,48 @@ class ParameterWrapper(BaseSweepObject):
     def _setter_factory(self):
         value = self._parameter()
         yield BaseSweepObject.parameter_log_format(self._parameter, value, setting=False)
+
+
+class HardwareSweep(BaseSweepObject):
+    """
+    Hardware sweep
+    """
+    def __init__(self, func):
+        self._func = func
+        self._value_sizes = set()
+        super().__init__()
+
+    def _make_result_generator(self, param_result):
+        value = copy.copy(param_result["value"])
+
+        if not isinstance(value, collections.Sized):
+            value = itertools.repeat(value)
+            self._value_sizes.add(1)
+        else:
+            self._value_sizes.add(len(value))
+
+        def inner():
+            p = dict(param_result)
+            for v in value:
+                p["value"] = v
+                yield p
+
+        return inner
+
+    def _setter_factory(self):
+        sweep_result = self._func(self._station, self._namespace)
+        result_generators = []
+
+        for param_result in sweep_result.values():
+            result_generators.append(self._make_result_generator(param_result)())
+
+        if len(self._value_sizes) > 2 or (len(self._value_sizes) == 2 and min(self._value_sizes) > 1):
+            raise RuntimeError("The values returned by the hardware sweep should all be the "
+                               "same size. Values of size 1 are allowed and these values will be repeated")
+
+        for _ in range(max(self._value_sizes)):
+            iteration_result = {k: next(v) for k, v in zip(sweep_result.keys(), result_generators)}
+            yield iteration_result
 
 
 class NestedSweep(CompoundSweep):
