@@ -6,6 +6,8 @@ from collections import OrderedDict
 import copy
 import itertools
 import time
+from operator import mul
+from functools import reduce
 
 import qcodes
 import qcodes.instrument.parameter
@@ -56,6 +58,9 @@ class BaseSweepObject:
         self._station = None  # A QCoDeS station which allows us to access measurement instruments
         self._namespace = None  # The namespace allows different measurement functions to share a memory space
 
+        self.shape = ()
+        self.coords = []
+
     def _setter_factory(self):
         """
         When called, this method returns the param setter iterable appropriate for this measurement
@@ -74,6 +79,12 @@ class BaseSweepObject:
     def __call__(self, *objects):
         chained_sweep_object = ChainSweep(objects)
         return NestedSweep([self, chained_sweep_object])
+
+    def __len__(self):
+        try:
+            return reduce(mul, self.shape)
+        except:
+            return None
 
     def set_station(self, station):
         """
@@ -124,12 +135,16 @@ class CompoundSweep(BaseSweepObject):
         for so in sweep_objects:
             if isinstance(so, list):
                 so = ChainSweep(so)
+            
             elif isinstance(so, tuple):
                 so = NestedSweep(so)
+            
             elif isinstance(so, qcodes.instrument.parameter.Parameter):
                 so = ParameterWrapper(so)
+            
             elif isinstance(so, BaseSweepObject):
                 so = so
+            
             elif callable(so):
                 so = FunctionWrapper(so)
 
@@ -210,6 +225,14 @@ class ParameterSweep(BaseSweepObject):
         self._point_function = point_function
         super().__init__()
 
+        try:
+            pts = point_function(self._station, self._namespace)
+            self.shape = (len(pts),)
+            self.coords.append((parameter.name, pts))
+        except:
+            self.shape = None
+            self.coords.append((parameter.name, pts))
+
     def _setter_factory(self):
         for set_value in self._point_function(self._station, self._namespace):
             self._parameter.set(set_value)
@@ -235,6 +258,14 @@ class FunctionSweep(BaseSweepObject):
         self._point_function = point_function
         super().__init__()
 
+        try:
+            pts = point_function(self._station, self._namespace)
+            self.shape = (len(pts),)
+            self.coords.append((set_function.__name__, pts))
+        except:
+            self.shape = None
+            self.coords.append((set_function.__name__, None))
+
     def _setter_factory(self):
         for set_value in self._point_function(self._station, self._namespace):
             yield self._set_function(self._station, self._namespace, set_value)
@@ -253,6 +284,8 @@ class FunctionWrapper(BaseSweepObject):
         self._func = func
         super().__init__()
 
+        self.shape = (1,)
+
     def _setter_factory(self):
         yield self._func(self._station, self._namespace)
 
@@ -268,6 +301,8 @@ class ParameterWrapper(BaseSweepObject):
     def __init__(self, parameter):
         self._parameter = parameter
         super().__init__()
+
+        self.shape = (1,)
 
     def _setter_factory(self):
         value = self._parameter()
@@ -381,6 +416,17 @@ class NestedSweep(CompoundSweep):
 
         return IteratorSweep(inner)
 
+    def __init__(self, sweep_objects):
+        super().__init__(sweep_objects)
+
+        if None in [s.shape for s in self._sweep_objects]:
+            self.shape = None
+        else:
+            self.shape = ()
+            for s in self._sweep_objects:
+                self.coords += s.coords
+                self.shape = self.shape + s.shape
+
     def _setter_factory(self):
         prod = self._sweep_objects[0]
         for so in self._sweep_objects[1:]:
@@ -409,6 +455,27 @@ class ChainSweep(CompoundSweep):
     """
     Chain a list of sweep object to run one after the other
     """
+    def __init__(self, sweep_objects):
+        super().__init__(sweep_objects)
+
+        if None in [s.shape for s in self._sweep_objects]:
+            self.shape = None
+        else:
+            real_sweeps = [s for s in self._sweep_objects if not \
+                (isinstance(s, FunctionWrapper) or isinstance(s, ParameterWrapper))]
+            nwrappers = len(sweep_objects) - len(real_sweeps)
+
+            if len(real_sweeps) == 0:
+                self.shape = (1,)
+
+            elif len(real_sweeps) == 1:
+                self.shape = real_sweeps[0].shape
+                self.coords = real_sweeps[0].coords
+            
+            else:
+                self.shape = None
+
+
     def _setter_factory(self):
         for so in self._sweep_objects:
             for result in so:
