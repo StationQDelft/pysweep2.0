@@ -1,6 +1,6 @@
 import pytest
 
-from pysweep.data_storage.json import JSONStorage
+from pysweep.data_storage.json_storage import JSONStorage
 
 
 def test():

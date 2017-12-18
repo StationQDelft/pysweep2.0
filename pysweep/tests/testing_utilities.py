@@ -84,7 +84,7 @@ class ParameterFactory(BaseObjectFactory):
     def __init__(self, std_out):
         self._std_out = std_out
         self._counter = 0
-        super().__init__(qcodes.StandardParameter)
+        super().__init__(qcodes.Parameter)
 
     def _args_function(self):
         def setter(v):

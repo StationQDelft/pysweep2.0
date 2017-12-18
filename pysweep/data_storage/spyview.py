@@ -4,7 +4,6 @@ from collections import defaultdict
 
 import numpy as np
 import qcodes
-import qcodes.data.location
 
 from pysweep.data_storage.base_storage import BaseStorage
 from pysweep.utils import DictMerge
