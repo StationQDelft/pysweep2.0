@@ -135,16 +135,16 @@ class CompoundSweep(BaseSweepObject):
         for so in sweep_objects:
             if isinstance(so, list):
                 so = ChainSweep(so)
-            
+
             elif isinstance(so, tuple):
                 so = NestedSweep(so)
-            
+
             elif isinstance(so, qcodes.instrument.parameter.Parameter):
                 so = ParameterWrapper(so)
-            
+
             elif isinstance(so, BaseSweepObject):
                 so = so
-            
+
             elif callable(so):
                 so = FunctionWrapper(so)
 
@@ -466,12 +466,12 @@ class ChainSweep(CompoundSweep):
             nwrappers = len(sweep_objects) - len(real_sweeps)
 
             if len(real_sweeps) == 0:
-                self.shape = (1,)
+                self.shape = ()
 
             elif len(real_sweeps) == 1:
                 self.shape = real_sweeps[0].shape
                 self.coords = real_sweeps[0].coords
-            
+
             else:
                 self.shape = None
 
