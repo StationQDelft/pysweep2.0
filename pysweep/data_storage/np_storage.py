@@ -45,8 +45,8 @@ class NpStorage(BaseStorage):
 
     def dict_to_array(self, dictionary):
 
-        units = [d["unit"] for d in dictionary.values()]
-        field_names = ["{} [{}]".format(*nu) for nu in zip(dictionary.keys(), units)]
+        units = [d["unit"] if 'unit' in d else '' for d in dictionary.values()]
+        field_names = ["{} [{}]".format(*nu) if nu[-1] != '' else "{}".format(*nu[:-1]) for nu in zip(dictionary.keys(), units)]
 
         values = [np.atleast_1d(d["value"]) for d in dictionary.values()]
         flatten = any([isinstance(v, DataSet) for v in values])
