@@ -63,7 +63,8 @@ class NpStorage(BaseStorage):
 
         return rval
 
-    def add(self, record):
+    def record_to_pages(self, record):
+        pages = defaultdict(lambda: None)
 
         independents = [(name, value) for name, value in record.items() if value.get('independent_parameter', False)]
         independents = self.dict_to_array(dict(independents))
@@ -82,8 +83,15 @@ class NpStorage(BaseStorage):
                 independents = np.append(self._delay_buffer[name], independents)
                 del self._delay_buffer[name]
 
-            page = merge_arrays([independents, dependent], flatten=True, usemask=False)
+            pages[name] = merge_arrays([independents, dependent], flatten=True, usemask=False)
 
+        return pages
+
+
+    def add(self, record):
+
+        pages = self.record_to_pages(record)
+        for name, page in pages.items():
             try:
                 self._pages[name] = self.sane_append(self._pages[name], page)
             except TypeError:
