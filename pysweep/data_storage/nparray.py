@@ -169,7 +169,7 @@ class NpStorage(BaseStorage):
                 iax += 1
             
             for i, k in enumerate(self.record_info['datafield_names']):
-                f.write("{}\n{}\n".format(i+naxes, k))
+                f.write("{}\n{}\n".format(i+naxes+1, k))
     
          
     def __init__(self):
