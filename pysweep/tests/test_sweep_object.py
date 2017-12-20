@@ -1,4 +1,3 @@
-import numpy as np
 
 from pysweep.sweep_object import sweep, nested_sweep, ParameterSweep, ChainSweep, HardwareSweep
 from pysweep.tests.testing_utilities import equivalence_test, run_test_function
