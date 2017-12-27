@@ -47,8 +47,8 @@ class BaseStorage:
 
     def dict_to_array(self, dictionary):
 
-        units = [d["unit"] for d in dictionary.values()]
-        field_names = ["{} [{}]".format(*nu) for nu in zip(dictionary.keys(), units)]
+        units = [d["unit"] if 'unit' in d else '' for d in dictionary.values()]
+        field_names = ["{} [{}]".format(*nu) if nu[-1] != "" else "{}".format(*nu[:-1]) for nu in zip(dictionary.keys(), units)]
 
         values = [np.atleast_1d(d["value"]) for d in dictionary.values()]
         flatten = any([isinstance(v, DataSet) for v in values])
@@ -65,7 +65,8 @@ class BaseStorage:
 
         return rval
 
-    def add(self, record):
+    def record_to_pages(self, record):
+        pages = defaultdict(lambda: None)
 
         independents = [(name, value) for name, value in record.items() if value.get('independent_parameter', False)]
         independents = self.dict_to_array(dict(independents))
@@ -84,13 +85,20 @@ class BaseStorage:
                 independents = np.append(self._delay_buffer[name], independents)
                 del self._delay_buffer[name]
 
-            page = merge_arrays([independents, dependent], flatten=True, usemask=False)
+            pages[name] = merge_arrays([independents, dependent], flatten=True, usemask=False)
 
+        return pages
+    
+
+    def add(self, record):
+        pages = self.record_to_pages(record)
+        for name, page in pages.items():
             try:
                 self._pages[name] = self.sane_append(self._pages[name], page)
             except TypeError:
                 raise TypeError("The shape or dtype of the measurement and/or independent parameter has suddenly "
                                 "changed. This is not allowed")
+
 
     def dataset(self, dset):
 
