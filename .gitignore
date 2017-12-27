@@ -16,3 +16,4 @@ pysweep/docs/spyview_formatter.ipynb
 pysweep/docs/triggered_sweep.ipynb
 pysweep/tests/.cache/
 pysweep/tests/__pycache__/
+.vscode/
