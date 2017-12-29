@@ -1,10 +1,11 @@
 import numpy as np
 import pandas as pd
 
-from pysweep.data_storage import NpStorage
+from pysweep.data_storage import BaseStorage
 
 
-class PandasStorage(NpStorage):
+class PandasStorage(BaseStorage):
+
     def __getitem__(self, item):
         data_frame = super().__getitem__(item)
         dtype = data_frame.dtype

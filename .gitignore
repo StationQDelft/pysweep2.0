@@ -1,6 +1,7 @@
 # Created by .ignore support plugin (hsz.mobi)
 .gitignore
 .idea/
+.vscode
 *.pyc
 pysweep_v2.ipynb
 pysweep/.cache/
@@ -15,3 +16,4 @@ pysweep/docs/spyview_formatter.ipynb
 pysweep/docs/triggered_sweep.ipynb
 pysweep/tests/.cache/
 pysweep/tests/__pycache__/
+.vscode/

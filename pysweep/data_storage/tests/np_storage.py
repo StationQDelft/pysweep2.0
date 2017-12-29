@@ -53,6 +53,42 @@ def test_2d():
     assert np.all(np.vstack([tmpy, tmpx]) == np.vstack(np.meshgrid(coordinate_values_y, coordinate_values_x)))
 
 
+def test_preserve_param_order():
+    """
+    Test that the order in which the independent parameter names appear in the store dtype is in the order whereby
+    the inner most loop appears first, the first outer loop appears second, etc.
+    """
+
+    n_params = 6
+    axis_lengths = n_params * [3]
+    alphabet = [chr(i) for i in range(ord("a"), ord("z") + 1)]
+    names = np.random.choice(alphabet, n_params, replace=False)
+
+    def param_function(name):
+        def inner(s, n, v):
+            return {name: {"unit": "", "value": v, "independent_parameter": True}}
+        return inner
+
+    params = [param_function(name) for name in names]
+    coordinate_values = [range(r) for r in axis_lengths]
+
+    measure_values = np.linspace(-1, 1, int(np.prod(axis_lengths)))
+    g = (i for i in measure_values)
+    measure = lambda s, n: {"measure": {"unit": "", "value": next(g)}}
+
+    so = measure
+    for p, c in zip(params, coordinate_values):
+        so = sweep(p, c)(so)
+
+    store = NpStorage()
+
+    for i in so:
+        store.add(i)
+
+    dtype_names = store["measure"].dtype.names
+    assert all(["{} []".format(name) == dtype_name for (name, dtype_name) in zip(names, dtype_names)])
+
+
 def test_2d_nd_measurement():
     m, n, o = 5, 7, 3
 
