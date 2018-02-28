@@ -10,7 +10,6 @@ from operator import mul
 from functools import reduce
 
 import qcodes
-import qcodes.instrument.parameter
 
 
 class BaseSweepObject:
@@ -537,7 +536,7 @@ def sweep(obj, sweep_points):
     else:
         point_function = sweep_points
 
-    if not isinstance(obj, qcodes.instrument.parameter.Parameter):
+    if not isinstance(obj, qcodes.Parameter):
         if not callable(obj):
             raise ValueError("The object to sweep over needs to either be a QCoDeS parameter or a function")
 

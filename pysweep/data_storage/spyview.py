@@ -1,182 +1,118 @@
-import json
+import numpy as np
 import os
+import json
+import time
+import re
 from collections import defaultdict
 
-import numpy as np
 import qcodes
-import qcodes.data.location
 
 from pysweep.data_storage.base_storage import BaseStorage
-from pysweep.utils import DictMerge
+
+
+class FileWriter:
+    def __init__(self, file_path, mode="w"):
+        self._file_path = file_path
+        self._mode = mode
+
+    def write(self, out_string):
+        with open(self._file_path, self._mode) as fh:
+            fh.write(out_string)
+
+    @property
+    def file_path(self):
+        return self._file_path
 
 
 class SpyviewMetaWriter:
-    def __init__(self, writer_function):
+    def __init__(self, writer):
+        self._writer = writer
 
-        self._writer_function = writer_function
-        self._default_axis_properties = dict(max=0, min=np.inf, step=0, length=1, name="")
-        self._axis_properties = defaultdict(lambda: dict(self._default_axis_properties))
-        self._axis_properties["none"] = dict(max=0, min=1, step=0, length=1, name="none")
+    @staticmethod
+    def find_axis_properties(array):
+        axis = np.unique(array)
+        return dict(
+            min=np.min(axis),
+            max=np.max(axis),
+            length=len(axis)
+        )
 
-    def _update_axis_properties(self, parameter_name, parameters_values, unit):
-        mn = parameters_values[0]
-        mx = parameters_values[-1]
-
-        self._axis_properties[parameter_name]["name"] = f"{parameter_name} [{unit}]"
-        self._axis_properties[parameter_name]["max"] = mx
-        self._axis_properties[parameter_name]["min"] = mn
-
-        if len(parameters_values) > 1:
-            self._axis_properties[parameter_name]["step"] = parameters_values[1] - mn
-            self._axis_properties[parameter_name]["length"] = int(
-                (mx - mn) / self._axis_properties[parameter_name]["step"]) + 1
-        else:
-            self._axis_properties[parameter_name]["length"] = 1
-
-    def add(self, spyview_buffer, parameters):
-
+    def write(self, page):
         property_names = ["length", "min", "max", "name"]
         property_values = []
 
-        for column_nr, parameter_name in enumerate(parameters):
+        independent_parameters = list(page.dtype.names[:-1])
 
-            if parameter_name == "none" or "independent_parameter" in spyview_buffer[parameter_name]:
-                if parameter_name != "none":
-                    unit = spyview_buffer[parameter_name]["unit"]
-                    value = sorted(set(spyview_buffer[parameter_name]["value"]))
-                    self._update_axis_properties(parameter_name, value, unit)
+        if len(independent_parameters) == 2:
+            independent_parameters.append("none")
 
-                s = "\n".join(str(self._axis_properties[parameter_name][k]) for k in property_names)
-                property_values.append(s)
-                property_names = ["length", "max", "min", "name"]
+        for axis_name in independent_parameters:
+
+            if axis_name != "none":
+                axis_properties = self.find_axis_properties(page[axis_name])
             else:
-                unit = spyview_buffer[parameter_name]["unit"]
-                s = "\n".join([str(column_nr), f"{parameter_name} [{unit}]"])
-                property_values.append(s)
+                axis_properties = dict(max=0, min=1, length=1)
+
+            axis_properties["name"] = axis_name
+
+            s = "\n".join(str(axis_properties[k]) for k in property_names)
+            property_values.append(s)
+            property_names = ["length", "max", "min", "name"]
+
+        axis_name = page.dtype.names[-1]
+        s = "\n".join(["3", axis_name])
+        property_values.append(s)
 
         out = "\n".join(property_values)
-        self._writer_function(out)
+        self._writer.write(out)
 
 
 class SpyviewWriter:
-    """
-    Save measurement results as spyview files
-    """
-
-    def __init__(self, writer_function, meta_writer, delayed_parameters=None, max_buffer_size=1000):
-        """
-        Parameters
-        ----------
-        writer_function: callable
-        delayed_parameters: list, str
-            A list of delayed parameters
-        max_buffer_size: int
-            If the number of lines to be written to the output file exceeds this number, the buffered values will be
-            written to the file system.
-        """
-
-        self._max_buffer_size = max_buffer_size
-        self._delayed_parameters = delayed_parameters or []
-        self._writer_function = writer_function
-
-        self._buffer = dict()
-        self._merger = DictMerge(unit="replace", value="append", independent_parameter="replace")
-        self._inner_sweep_start_value = None
-        self._independent_parameters = []
+    def __init__(self, writer, meta_writer):
+        self._writer = writer
         self._meta_writer = meta_writer
 
-    def _get_buffer_size(self):
-        if self._buffer == dict():
-            return 0
+    @staticmethod
+    def insert_field(array, position, field_name, field_dtype):
 
-        size = np.inf
-        for key in self._buffer.keys():
-            value = self._get_buffer_value(key)
-            if hasattr(value, "__len__"):
-                this_size = len(value)
-            else:
-                this_size = 1
+        names = array.dtype.names
 
-            size = min([size, this_size])
-        return size
+        new_dtype = [array.dtype[n] for n in names]
+        new_dtype.insert(position, field_dtype)
 
-    def _find_independent_parameters(self):
+        new_names = list(names)
+        new_names.insert(position, field_name)
 
-        def collapse(lst):
-            ary = np.array(lst)
-            return np.sum(ary != np.roll(ary, -1))
+        new_array = np.zeros(array.shape, dtype=list(zip(new_names, new_dtype)))
 
-        independent_collapsed = [[k, collapse(self._buffer[k]["value"])] for k in self._buffer
-                                  if "independent_parameter" in self._buffer[k]]
+        for name in names:
+            new_array[name] = array[name]
 
-        if len(independent_collapsed) == 0:
-            raise RuntimeError("No independent parameters found. Make sure you label at least one output as an "
-                               "independent parameter. Please consult the pysweep documentation at page TBD.")
+        return new_array
 
-        s = sorted(independent_collapsed, key=lambda el: el[1], reverse=True)
-        return list(zip(*s))[0]
+    def write(self, page):
+        params = list(page.dtype.names)
+        if len(params) == 2:
+            page = self.insert_field(page, 1, "empty", np.dtype((int, (1,))))
+            params.insert(1, "empty")
 
-    def _get_buffer_value(self, key):
-
-        if key == "empty":
-            first_independent_parameter = self._independent_parameters[0]
-            self._buffer["empty"] = {
-                "value": [0] * len(self._buffer[first_independent_parameter]["value"]),
-                "independent_parameter": True,
-                "unit": ""
-            }
-
-        return self._buffer[key]["value"]
-
-    def _write_buffer(self):
-
-        # We will first write the independent parameters in the right order
-        if len(self._independent_parameters) == 0:
-            self._independent_parameters = self._find_independent_parameters()
-
-            if len(self._independent_parameters) == 1:
-                self._independent_parameters += ("empty",)
-
-            if len(self._independent_parameters) == 2:
-                self._independent_parameters += ("none",)
-
-        all_parameters = list(self._independent_parameters)
-        all_parameters.extend([param for param in self._buffer.keys() if param not in self._independent_parameters])
-
-        buffer_values = [self._get_buffer_value(param) for param in all_parameters if param != "none"]
-        inner_sweep_values = np.array(buffer_values[0])
-
-        if self._inner_sweep_start_value is None:
-            self._inner_sweep_start_value = inner_sweep_values[0]
-
-        block_indices = inner_sweep_values == self._inner_sweep_start_value
-
+        inner = params[0]
+        inner_sweep_values = page[inner]
+        block_indices = (inner_sweep_values == inner_sweep_values[0]).flatten()
         escapes = [{True: "\n\n", False: "\n"}[i] for i in block_indices]
         escapes[0] = ""
 
-        lines = ["\t".join([str(ii) for ii in i]) for i in zip(*buffer_values)]
+        lines = ["\t".join([str(i[0]) for i in p[0]]) for p in list(zip(page))]
         lines = ["{}{}".format(*i) for i in zip(escapes, lines)]
         out = "".join(lines)
 
-        self._writer_function(out)
-        self._meta_writer.add(self._buffer, all_parameters)
+        out = "\n".join(["# {}".format(i) for i in params]) + "\n" + out
+        self._writer.write(out)
+        self._meta_writer.write(page)
 
-    def add(self, dictionary):
-        delayed_params_buffer = {param: {"value": []} for param in self._delayed_parameters}
-
-        if self._buffer == {}:
-            self._buffer = {k: {"value": []} for k in dictionary.keys()}
-
-        self._buffer = self._merger.merge([dictionary, delayed_params_buffer, self._buffer])
-        buffer_size = self._get_buffer_size()
-        if buffer_size and buffer_size % self._max_buffer_size == 0:
-            self._write_buffer()
-
-    def finalize(self):
-        self._write_buffer()
-
-    def get_buffer(self):
-        return self._buffer
+    @property
+    def file_path(self):
+        return self._writer.file_path
 
 
 class SpyviewStorage(BaseStorage):
@@ -228,56 +164,44 @@ class SpyviewStorage(BaseStorage):
         json_file_name = filename.replace(".dat", ".station_snapshot.json")
         return os.path.join(dirname, json_file_name)
 
-    def __init__(self, output_file_path=None, delayed_parameters=None, max_buffer_size=10,
-                 debug=False):
+    @staticmethod
+    def increment_file_number(file_path, increment=1):
+        ss = "_([0-9]*).dat"
+        result = re.search(ss, file_path)
+        file_num = int(result.groups()[0])
+        sub = "_{:0>3}.dat".format(file_num + increment)
+        return re.sub(ss, sub, file_path)
 
-        self._output_file_path = output_file_path or SpyviewStorage.default_file_path()
-        self._output_meta_file_path = SpyviewStorage.meta_file_path(self._output_file_path)
+    def __init__(self, write_delay=5):
+        super().__init__()
+        self._spywriters = defaultdict(self.create_spyview_writer)
 
-        self._data_folder, _ = os.path.split(self._output_file_path)
+        self._last_write_action = time.time()
+        self._write_delay = write_delay
+        self._base_file_path = SpyviewStorage.default_file_path()
+        self._n_spyview_files = 0
 
-        self._max_buffer_size = max_buffer_size
-        self._debug = debug
+    def create_spyview_writer(self):
+        file_path = self.increment_file_number(self._base_file_path, self._n_spyview_files)
+        file_writer = FileWriter(file_path)
+        self._n_spyview_files += 1
 
-        self._meta_writer = SpyviewMetaWriter(self._meta_writer_function)
-        self._writer = SpyviewWriter(
-            self._writer_function,
-            self._meta_writer,
-            delayed_parameters=delayed_parameters,
-            max_buffer_size=max_buffer_size
-        )
+        meta_file_path = self.meta_file_path(file_path)
+        meta_file_writer = FileWriter(meta_file_path)
+        meta_writer = SpyviewMetaWriter(meta_file_writer)
 
-    def _meta_writer_function(self, output):
-        if self._debug:
-            return
+        if self._base_file_path is None:
+            self._base_file_path = file_path
 
-        with open(self._output_meta_file_path, "w") as fh:
-            fh.write(output)
+        return SpyviewWriter(file_writer, meta_writer)
 
-    def _writer_function(self, output):
-        if self._debug:
-            return
-
-        with open(self._output_file_path, "w") as fh:
-            fh.write(output)
-
-    def output_files(self):
-        return self._output_file_path, self._output_meta_file_path
-
-    def add(self, dictionary):
-        self._writer.add(dictionary)
-
-    def output(self):
-        return self._writer.get_buffer()
-
-    def finalize(self):
-        self._writer.finalize()
+    def write(self):
+        for param in self._pages.keys():
+            page = self.output(param)
+            self._spywriters[param].write(page)
 
     def save_json_snapshot(self, snapshot):
 
-        json_file = SpyviewStorage.snapshot_file_path(self._output_file_path)
+        json_file = SpyviewStorage.snapshot_file_path(self._base_file_path)
         with open(json_file, 'w') as meta_file:
-            json.dump(snapshot, meta_file, sort_keys=False, indent=4, ensure_ascii=False)
-
-
-
+            json.dump(snapshot, meta_file, sort_keys=True, indent=4, ensure_ascii=False)
